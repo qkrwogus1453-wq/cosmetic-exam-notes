@@ -731,6 +731,194 @@ def build_ox():
 
 OX_QUESTIONS = build_ox()
 
+
+# ═════════════════════════════════════════════════════════════
+# 소독제 (작업장 위생관리 / CGMP) — 물리적·화학적 소독제
+#   해커스 교재 p.260~261 표 (이미지 판독 + 정리)
+#   4가지 유형 문제 자동 생성: 농도/시간, 물리·화학 분류, 장단점, 종류(성분)
+# ═════════════════════════════════════════════════════════════
+DISINFECTANTS = [
+    # 물리적 소독제
+    {"group": "물리적", "name": "스팀",
+     "spec": "100℃ 물 / 30분",
+     "spec_note": "가장 멀리있는 곳까지 온도가 유지되어야 함",
+     "pros": ["제품과의 우수한 적합성·용이한 사용성", "효과적", "바이오 필름 파괴 가능"],
+     "cons": ["보일러나 파이프에 잔류물 남음", "고에너지 소비", "긴 체류시간 및 소독시간", "습기 다량 발생"]},
+    {"group": "물리적", "name": "온수",
+     "spec": "80~100℃ / 30분 (70~80℃ / 2시간)",
+     "spec_note": "",
+     "pros": ["제품과의 우수한 적합성", "용이한 사용성", "긴 파이프 사용 가능", "부식성 없음", "출구 모니터링 간단"],
+     "cons": ["많은 양 필요", "긴 체류시간", "습기 다량 발생", "고에너지 소비"]},
+    {"group": "물리적", "name": "작열",
+     "spec": "전기 가열 테이프 (다른 방법과 같이 사용)",
+     "spec_note": "",
+     "pros": ["다루기 어려운 설비나 파이프에 효과적"],
+     "cons": ["일반적 사용방법이 아님"]},
+
+    # 화학적 소독제
+    {"group": "화학적", "name": "염소 유도체",
+     "kind": "치아염소산나트륨, 치아염소산칼슘",
+     "spec": "200ppm / 30분",
+     "spec_note": "",
+     "pros": ["우수한 효과", "사용 용이", "찬물에 용해되어 단독으로 사용 가능"],
+     "cons": ["향취", "pH 증가 시 효과 감소", "금속 표면과의 반응성으로 부식됨", "빛과 온도에 예민함", "피부 보호 필요"]},
+    {"group": "화학적", "name": "양이온 계면활성제",
+     "kind": "4급 암모늄화합물",
+     "spec": "200ppm, 제조사 추천 농도",
+     "spec_note": "",
+     "pros": ["세정 작용", "우수한 효과", "부식성 없음", "물에 용해되어 단독 사용 가능", "무향·높은 안정성"],
+     "cons": ["포자에 효과 없음", "중성/약알칼리에서 가장 효과적", "경수·음이온 세정제에 의해 불활성화 됨"]},
+    {"group": "화학적", "name": "알코올",
+     "kind": "아이소프로필알코올(60~70%/15분), 에탄올(60~95%/15분)",
+     "spec": "60~70% / 15분 (에탄올 60~95% / 15분)",
+     "spec_note": "",
+     "pros": ["세척 불필요", "사용 용이", "빠른 건조", "단독 사용"],
+     "cons": ["세균 포자에 효과 없음", "화재·폭발 위험", "피부 보호 필요"]},
+    {"group": "화학적", "name": "페놀",
+     "kind": "페놀, 염소화페놀",
+     "spec": "1:200 용액",
+     "spec_note": "",
+     "pros": ["세정 작용", "우수한 효과", "탈취 작용"],
+     "cons": ["조제하여 사용", "세척 필요함", "고가", "용액 상태로 불안정(2~3시간 이내 사용)", "피부 보호 필요"]},
+    {"group": "화학적", "name": "솔(Pine)",
+     "kind": "비누 및 계면활성제와 혼합한 솔유",
+     "spec": "제조사 지시에 농도 따름",
+     "spec_note": "",
+     "pros": ["세정 작용", "우수한 효과", "탈취 작용", "기름때 제거 효과"],
+     "cons": ["조제하여 사용", "냄새가 특정 제품에 부적합할 수 있음"]},
+    {"group": "화학적", "name": "인산",
+     "kind": "인산 용액",
+     "spec": "제조사 지시에 농도 따름",
+     "spec_note": "",
+     "pros": ["효과 좋음", "스테인리스에 좋음", "저렴한 가격", "낮은 온도에서 사용", "접촉 시간 짧음"],
+     "cons": ["산성에서 사용 좋음", "피부 보호 필요"]},
+    {"group": "화학적", "name": "과산화수소",
+     "kind": "안정화된 용액으로 구입",
+     "spec": "35% 용액의 1.5% / 30분",
+     "spec_note": "",
+     "pros": ["유기물에 효과적"],
+     "cons": ["고농도 시 폭발성", "반응성 있음", "피부 보호 필요"]},
+]
+
+
+def build_disinfectant():
+    import random, hashlib
+    qs = []
+    phys = [d for d in DISINFECTANTS if d["group"] == "물리적"]
+    chem = [d for d in DISINFECTANTS if d["group"] == "화학적"]
+
+    # 농도/시간 정보가 뚜렷한 것만 (제조사 지시 등 모호한 건 제외)
+    spec_items = [d for d in DISINFECTANTS
+                  if d["spec"] and "제조사" not in d["spec"] and "테이프" not in d["spec"]]
+
+    # ── 유형 1: 농도/시간 맞히기 ──
+    for d in spec_items:
+        others = [x["spec"] for x in spec_items if x["spec"] != d["spec"]]
+        distractors = random.sample(others, min(3, len(others)))
+        if len(distractors) < 3:
+            continue
+        note = f" ({d['spec_note']})" if d["spec_note"] else ""
+        qs.append({
+            "cat": "소독제", "type": "농도·시간",
+            "q": f"소독제 <b>{d['name']}</b>의 사용농도/시간 기준으로 옳은 것은?",
+            "opts": [d["spec"]] + distractors,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>은(는) <b>{d['spec']}</b>이 기준이에요.{note}",
+            "compare": [[x["name"], x["spec"]] for x in spec_items],
+        })
+
+    # ── 유형 2: 물리적/화학적 분류 ──
+    # "다음 중 물리적 소독제인 것은?" (정답 1 물리 + 오답 3 화학)
+    for d in phys:
+        wrong = random.sample([x["name"] for x in chem], 3)
+        qs.append({
+            "cat": "소독제", "type": "분류",
+            "q": "다음 중 <b>물리적 소독제</b>에 해당하는 것은?",
+            "opts": [d["name"]] + wrong,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>이(가) 물리적 소독제예요. 물리적 소독제는 스팀·온수·작열 3가지이고, 나머지는 모두 화학적 소독제입니다.",
+            "compare": [["물리적 소독제", "스팀 · 온수 · 작열"],
+                        ["화학적 소독제", "염소 유도체 · 양이온 계면활성제 · 알코올 · 페놀 · 솔 · 인산 · 과산화수소"]],
+        })
+    # "다음 중 화학적 소독제가 아닌 것은?" (정답=물리 1 + 화학 3)
+    for d in phys:
+        wrong = random.sample([x["name"] for x in chem], 3)
+        opts = [d["name"]] + wrong
+        qs.append({
+            "cat": "소독제", "type": "분류",
+            "q": "다음 중 <b>화학적 소독제가 아닌</b> 것은?",
+            "opts": opts,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>은(는) 물리적 소독제예요. 나머지는 화학적 소독제입니다.",
+            "compare": [["물리적", "스팀 · 온수 · 작열"],
+                        ["화학적", "염소 유도체 · 양이온 계면활성제 · 알코올 · 페놀 · 솔 · 인산 · 과산화수소"]],
+        })
+
+    # ── 유형 3: 장점·단점 매칭 ──
+    # 단점 맞히기: 해당 소독제의 실제 단점(정답) + 다른 소독제의 단점(오답)
+    all_cons = [(d["name"], c) for d in DISINFECTANTS for c in d["cons"]]
+    all_pros = [(d["name"], p) for d in DISINFECTANTS for p in d["pros"]]
+    for d in DISINFECTANTS:
+        if not d["cons"]:
+            continue
+        correct = random.choice(d["cons"])
+        pool = [c for (nm, c) in all_cons if nm != d["name"] and c not in d["cons"]]
+        pool = list(dict.fromkeys(pool))
+        if len(pool) < 3:
+            continue
+        distractors = random.sample(pool, 3)
+        qs.append({
+            "cat": "소독제", "type": "특징",
+            "q": f"소독제 <b>{d['name']}</b>의 <u>단점</u>으로 옳은 것은?",
+            "opts": [correct] + distractors,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>의 단점: {', '.join(d['cons'])}.",
+            "compare": [[d["name"] + " 단점", " / ".join(d["cons"])]],
+        })
+    # 장점 맞히기
+    for d in DISINFECTANTS:
+        if not d["pros"]:
+            continue
+        correct = random.choice(d["pros"])
+        pool = [p for (nm, p) in all_pros if nm != d["name"] and p not in d["pros"]]
+        pool = list(dict.fromkeys(pool))
+        if len(pool) < 3:
+            continue
+        distractors = random.sample(pool, 3)
+        qs.append({
+            "cat": "소독제", "type": "특징",
+            "q": f"소독제 <b>{d['name']}</b>의 <u>장점</u>으로 옳은 것은?",
+            "opts": [correct] + distractors,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>의 장점: {', '.join(d['pros'])}.",
+            "compare": [[d["name"] + " 장점", " / ".join(d["pros"])]],
+        })
+
+    # ── 유형 4: 종류(성분) 맞히기 ──
+    kind_items = [d for d in DISINFECTANTS if d.get("kind")]
+    for d in kind_items:
+        others = [x["kind"] for x in kind_items if x["kind"] != d["kind"]]
+        distractors = random.sample(others, min(3, len(others)))
+        if len(distractors) < 3:
+            continue
+        qs.append({
+            "cat": "소독제", "type": "종류",
+            "q": f"소독제 <b>{d['name']}</b>에 해당하는 종류(성분)로 옳은 것은?",
+            "opts": [d["kind"]] + distractors,
+            "answer": 0,
+            "explain": f"<b>{d['name']}</b>의 종류는 <b>{d['kind']}</b>예요.",
+            "compare": [[x["name"], x["kind"]] for x in kind_items],
+        })
+
+    # ID 부여
+    for q in qs:
+        key = q["q"] + "||" + q["opts"][q["answer"]]
+        q["id"] = "ds" + hashlib.md5(key.encode("utf-8")).hexdigest()[:8]
+    return qs
+
+
+QUESTIONS = QUESTIONS + build_disinfectant()
+
 # ─────────────────────────────────────────────────────────────
 # HTML 출력
 # ─────────────────────────────────────────────────────────────
@@ -1142,8 +1330,11 @@ let order = [], idx = 0, score = 0, answered = false, missed = [], streak = 0, b
 let lastMode = "normal"; // normal | retry | wrongbank
 let statsOpen = false;
 
-const categories = ["전체", ...Array.from(new Set(QUESTIONS.map(q => q.cat)))];
-const catList = categories.filter(c => c !== "전체");
+function modeCategories(){
+  const bank = currentBank();
+  return ["전체", ...Array.from(new Set(bank.map(q => q.cat)))];
+}
+const catList = Array.from(new Set(QUESTIONS.map(q => q.cat)));
 const QMAP = {};
 QUESTIONS.forEach(q => { QMAP[q.id] = q; });
 
@@ -1209,9 +1400,12 @@ function currentBank(){
 
 function buildChips(){
   const bank = currentBank();
+  const cats = modeCategories();
+  // 현재 필터가 이 모드에 없는 카테고리면 '전체'로 되돌림
+  if(!cats.includes(currentFilter)) currentFilter = "전체";
   const chipsEl = document.getElementById('chips');
   chipsEl.innerHTML = "";
-  categories.forEach(cat => {
+  cats.forEach(cat => {
     const n = cat === "전체" ? bank.length : bank.filter(q => q.cat === cat).length;
     const b = document.createElement('button');
     b.className = 'chip' + (cat === currentFilter ? ' active' : '');
@@ -1333,6 +1527,8 @@ function startQuiz(customPool, mode){
   document.getElementById('statsPanel').classList.remove('show');
 
   const bank = currentBank();
+  // 현재 필터가 이 모드에 없으면 전체로 (OX엔 소독제·법령 없음)
+  if(!customPool && !modeCategories().includes(currentFilter)) currentFilter = "전체";
   const base = customPool
     ? customPool
     : (currentFilter === "전체" ? bank : bank.filter(q => q.cat === currentFilter));
@@ -1491,8 +1687,24 @@ function renderResult(){
   else if(pct >= 75){ emoji = "🌸"; comment = "합격권이에요. 아래 오답노트만 한 번 더 짚고 가요."; }
   else if(pct >= 55){ emoji = "🍀"; comment = "절반 이상 잡았어요! 유사 성분 짝(자일렌/케톤 등)을 세트로 외워봐요."; }
 
-  const retryLabel = (lastMode === "retry" || lastMode === "wrongbank")
-    ? "이번에도 틀린 것만 다시" : `틀린 ${missed.length}문제만 다시`;
+  const isRetryRound0 = (lastMode === "retry" || lastMode === "wrongbank");
+  // 재풀이 라운드에서 이번 판 오답이 0이면 = 틀렸던 걸 다 맞힌 것 → 완료 문구
+  if(isRetryRound0 && missed.length === 0){
+    emoji = "🎯";
+    comment = "틀렸던 문제를 모두 맞혔어요. 완벽하게 잡았어요!";
+  }
+
+  // 재풀이 관련 라벨/버튼 구성
+  const isRetryRound = (lastMode === "retry" || lastMode === "wrongbank");
+  const retryLabel = isRetryRound
+    ? `틀린 ${missed.length}문제 계속 풀기`
+    : `틀린 ${missed.length}문제만 다시`;
+
+  // 누적 오답(이번 판 제외)이 따로 있는지 — 사지선다 모드에서만
+  const bankWrong = (quizMode === "mcq") ? wrongBankIds() : [];
+  const missedIds = new Set(missed.map(m => m.id));
+  const extraWrong = bankWrong.filter(id => !missedIds.has(id));
+  const showCombo = missed.length && extraWrong.length > 0;
 
   const missedHtml = missed.length ? `
     <div class="missed-list">
@@ -1506,7 +1718,9 @@ function renderResult(){
           <div><span class="mx">${mine}</span> → <span class="ma">${right}</span></div>
         </div>`;
       }).join("")}
-    </div>` : `<p style="margin-top:18px;">🎉 이번 판은 다 맞혔어요!</p>`;
+    </div>` : (isRetryRound
+        ? `<p style="margin-top:18px;">🎉 틀렸던 문제를 모두 맞혔어요! 완료!</p>`
+        : `<p style="margin-top:18px;">🎉 이번 판은 다 맞혔어요!</p>`);
 
   document.getElementById('quizCard').innerHTML = `
     <div class="result">
@@ -1521,6 +1735,7 @@ function renderResult(){
       <div class="btn-row">
         <button class="restart-btn primary" id="restartBtn">새 문제로 다시</button>
         ${missed.length ? `<button class="restart-btn retry" id="retryBtn">${retryLabel}</button>` : ""}
+        ${showCombo ? `<button class="restart-btn retry" id="comboBtn">틀린 것 + 누적 오답 ${missed.length + extraWrong.length}문제</button>` : ""}
       </div>
       ${missedHtml}
     </div>`;
@@ -1531,16 +1746,23 @@ function renderResult(){
   });
 
   document.getElementById('restartBtn').addEventListener('click', () => startQuiz());
+
+  const bank = currentBank();
+  const resolve = m => bank.find(q => q.id === m.id) || bank.find(q => q.q === m.q && q.cat === m.cat)
+                    || (() => { const { chosenText, ...rest } = m; return rest; })();
+
   const retry = document.getElementById('retryBtn');
   if(retry){
-    const bank = currentBank();
-    const pool = missed.map(m => {
-      const found = bank.find(q => q.id === m.id) || bank.find(q => q.q === m.q && q.cat === m.cat);
-      if(found) return found;
-      const { chosenText, ...rest } = m;
-      return rest;
-    });
+    const pool = missed.map(resolve);
     retry.addEventListener('click', () => startQuiz(pool, "retry"));
+  }
+
+  const combo = document.getElementById('comboBtn');
+  if(combo){
+    // 이번 판 오답 + 예전 누적 오답을 합쳐서
+    const pool = [...missed.map(resolve),
+                  ...extraWrong.map(id => QMAP[id]).filter(Boolean)];
+    combo.addEventListener('click', () => startQuiz(pool, "wrongbank"));
   }
 }
 
