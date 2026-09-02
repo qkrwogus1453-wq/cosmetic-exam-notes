@@ -16,8 +16,18 @@ index.html이 새로 생성됩니다.
 """
 
 import json
+import os
 import random
 from collections import defaultdict
+
+# 교재(해커스 이론편 361쪽) 기반 문항 — 별도 파일에서 로드
+# 이 파일을 지우거나 이름을 바꾸면 교재 탭 없이 기존 퀴즈만 빌드됩니다.
+_BOOK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "questions_book.json")
+try:
+    with open(_BOOK_PATH, encoding="utf-8") as _f:
+        BOOK_QUESTIONS = json.load(_f)
+except FileNotFoundError:
+    BOOK_QUESTIONS = []
 
 # ─────────────────────────────────────────────────────────────
 # 1. 단일 한도 성분: (카테고리, 성분명, 한도문자열, 비고)
@@ -89,6 +99,7 @@ SIMPLE = [
     ("자외선차단", "부틸메톡시디벤조일메탄", "5%", ""),
     ("자외선차단", "비스-에칠헥실옥시페놀메톡시페닐트리아진", "10%", ""),
     ("자외선차단", "시녹세이트", "5%", ""),
+    ("자외선차단", "옥토크릴렌", "10%", ""),
     ("자외선차단", "에칠헥실다이메칠파바", "8%", ""),
     ("자외선차단", "에칠헥실메톡시신나메이트", "7.5%", ""),
     ("자외선차단", "에칠헥실살리실레이트", "5%", ""),
@@ -157,6 +168,7 @@ SIMPLE = [
     ("기타성분", "3-메칠논-2-엔니트릴", "0.2%", ""),
     ("기타성분", "메칠 2-옥티노에이트(메칠헵틴카보네이트)", "0.01%", "메칠옥티노에이트와 병용 시 합 0.01%"),
     ("기타성분", "메칠옥티노에이트", "0.002%", ""),
+    ("기타성분", "메칠헵타디에논", "0.002%", ""),
     ("기타성분", "p-메칠하이드로신남알데하이드", "0.2%", ""),
     ("기타성분", "메톡시디시클로펜타디엔카르복스알데하이드", "0.5%", ""),
     ("기타성분", "4-tert-부틸디하이드로신남알데하이드", "0.6%", ""),
@@ -558,7 +570,7 @@ def build_questions():
         pool = [lim for nm, lim in by_cat[cat] if lim != limit]
         target = parse_pct(limit)
 
-        # 오답은 정답과 '가까운 값' 우선 → 훨씬 헷갈림
+        # 오답은 정답과 '가까운 값' 우선 → 훨씬 헷갈림. 최대 4개(5지선다)
         if target is not None:
             scored = []
             for lim in set(pool):
@@ -567,10 +579,10 @@ def build_questions():
                     continue
                 scored.append((abs(v - target), lim))
             scored.sort()
-            near = [lim for _, lim in scored[:8]]
-            distractors = random.sample(near, min(3, len(near))) if near else []
+            near = [lim for _, lim in scored[:10]]
+            distractors = random.sample(near, min(4, len(near))) if near else []
         else:
-            distractors = random.sample(list(set(pool)), min(3, len(set(pool))))
+            distractors = random.sample(list(set(pool)), min(4, len(set(pool))))
 
         if len(distractors) < 3:
             continue
@@ -612,9 +624,9 @@ def build_questions():
             for v in all_vals:
                 if v != val and v not in distractors:
                     distractors.append(v)
-            # 부족하면 같은 카테고리 인접 수치로 채움
+            # 부족하면 같은 카테고리 인접 수치로 채움 (목표 4개, 5지선다)
             target = parse_pct(val)
-            if len(distractors) < 3 and target is not None:
+            if len(distractors) < 4 and target is not None:
                 scored = []
                 for lim in set(cat_pool):
                     v = parse_pct(lim)
@@ -623,10 +635,10 @@ def build_questions():
                     scored.append((abs(v - target), lim))
                 scored.sort()
                 for _, lim in scored:
-                    if len(distractors) >= 3:
+                    if len(distractors) >= 4:
                         break
                     distractors.append(lim)
-            distractors = distractors[:3]
+            distractors = distractors[:4]
             if len(distractors) < 3:
                 continue
 
@@ -814,7 +826,7 @@ def build_disinfectant():
     # ── 유형 1: 농도/시간 맞히기 ──
     for d in spec_items:
         others = [x["spec"] for x in spec_items if x["spec"] != d["spec"]]
-        distractors = random.sample(others, min(3, len(others)))
+        distractors = random.sample(others, min(4, len(others)))
         if len(distractors) < 3:
             continue
         note = f" ({d['spec_note']})" if d["spec_note"] else ""
@@ -830,7 +842,7 @@ def build_disinfectant():
     # ── 유형 2: 물리적/화학적 분류 ──
     # "다음 중 물리적 소독제인 것은?" (정답 1 물리 + 오답 3 화학)
     for d in phys:
-        wrong = random.sample([x["name"] for x in chem], 3)
+        wrong = random.sample([x["name"] for x in chem], min(4, len(chem)))
         qs.append({
             "cat": "소독제", "type": "분류",
             "q": "다음 중 <b>물리적 소독제</b>에 해당하는 것은?",
@@ -842,7 +854,7 @@ def build_disinfectant():
         })
     # "다음 중 화학적 소독제가 아닌 것은?" (정답=물리 1 + 화학 3)
     for d in phys:
-        wrong = random.sample([x["name"] for x in chem], 3)
+        wrong = random.sample([x["name"] for x in chem], min(4, len(chem)))
         opts = [d["name"]] + wrong
         qs.append({
             "cat": "소독제", "type": "분류",
@@ -866,7 +878,7 @@ def build_disinfectant():
         pool = list(dict.fromkeys(pool))
         if len(pool) < 3:
             continue
-        distractors = random.sample(pool, 3)
+        distractors = random.sample(pool, min(4, len(pool)))
         qs.append({
             "cat": "소독제", "type": "특징",
             "q": f"소독제 <b>{d['name']}</b>의 <u>단점</u>으로 옳은 것은?",
@@ -884,7 +896,7 @@ def build_disinfectant():
         pool = list(dict.fromkeys(pool))
         if len(pool) < 3:
             continue
-        distractors = random.sample(pool, 3)
+        distractors = random.sample(pool, min(4, len(pool)))
         qs.append({
             "cat": "소독제", "type": "특징",
             "q": f"소독제 <b>{d['name']}</b>의 <u>장점</u>으로 옳은 것은?",
@@ -898,7 +910,7 @@ def build_disinfectant():
     kind_items = [d for d in DISINFECTANTS if d.get("kind")]
     for d in kind_items:
         others = [x["kind"] for x in kind_items if x["kind"] != d["kind"]]
-        distractors = random.sample(others, min(3, len(others)))
+        distractors = random.sample(others, min(4, len(others)))
         if len(distractors) < 3:
             continue
         qs.append({
@@ -919,6 +931,296 @@ def build_disinfectant():
 
 QUESTIONS = QUESTIONS + build_disinfectant()
 
+
+# ═════════════════════════════════════════════════════════════
+# 핵심이론 모드 (THEORY) — 사용한도/OX와 격리된 별도 모드
+#   알레르기 25종, 피부·모발 구조, 결격사유·법규, 위해평가 등
+#   출처: 식약처 고시·화장품법 (웹 교차확인)
+# ═════════════════════════════════════════════════════════════
+
+# ── 착향제 알레르기 유발성분 25종 (식약처 고시 별표) ──
+ALLERGENS_25 = [
+    "아밀신남알", "벤질알코올", "신나밀알코올", "시트랄", "유제놀",
+    "하이드록시시트로넬알", "이소유제놀", "아밀신나밀알코올", "벤질살리실레이트", "신남알",
+    "쿠마린", "제라니올", "아니스알코올", "벤질신나메이트", "파네솔",
+    "부틸페닐메칠프로피오날", "리날룰", "벤질벤조에이트", "시트로넬롤", "헥실신남알",
+    "리모넨", "메칠2-옥티노에이트", "알파-이소메칠이오논", "참나무이끼추출물", "나무이끼추출물",
+]
+# 알레르기 25종이 아닌 '함정' 성분 (보존제/자외선차단제 등에서 가져온 오답용)
+NON_ALLERGENS = [
+    "페녹시에탄올", "파라벤", "징크옥사이드", "글리세린", "티타늄디옥사이드",
+    "소듐하이알루로네이트", "나이아신아마이드", "세라마이드", "판테놀", "알란토인",
+    "벤조페논-3", "카보머", "잔탄검", "스쿠알란", "다이메티콘",
+]
+
+# ── 개념·법규 O/X·단답형 (문항, 정답, 오답들, 해설) ──
+THEORY_MCQ = [
+    # 알레르기 표시 기준
+    {"sub": "알레르기유발성분",
+     "q": "착향제 알레르기 유발성분은 <b>사용 후 씻어내는 제품</b>에서 몇 %를 초과할 때 표시해야 하나요?",
+     "correct": "0.01% 초과", "wrong": ["0.001% 초과", "0.1% 초과", "0.5% 초과", "1.0% 초과"],
+     "explain": "씻어내는 제품은 <b>0.01% 초과</b>, 씻어내지 않는 제품은 <b>0.001% 초과</b> 시 표시해요. 씻어내는 쪽이 10배 더 관대해요."},
+    {"sub": "알레르기유발성분",
+     "q": "착향제 알레르기 유발성분은 <b>사용 후 씻어내지 않는 제품</b>에서 몇 %를 초과할 때 표시해야 하나요?",
+     "correct": "0.001% 초과", "wrong": ["0.01% 초과", "0.1% 초과", "0.05% 초과", "0.5% 초과"],
+     "explain": "씻어내지 않는 제품(로션·크림 등)은 피부에 오래 남으므로 더 엄격한 <b>0.001% 초과</b> 기준이에요. 씻어내는 제품은 0.01% 초과."},
+    {"sub": "알레르기유발성분",
+     "q": "식약처가 고시한 착향제 알레르기 유발성분은 모두 몇 종인가요?",
+     "correct": "25종", "wrong": ["20종", "23종", "26종", "30종"],
+     "explain": "총 <b>25종</b>이에요. 이 성분들은 '향료'로만 표시할 수 없고 개별 성분명을 기재해야 해요."},
+    {"sub": "알레르기유발성분",
+     "q": "알레르기 유발성분 표시에 대한 설명으로 옳은 것은?",
+     "correct": "향료로만 표시할 수 없고 개별 성분명을 기재해야 한다",
+     "wrong": ["함량과 무관하게 무조건 향료로 표시한다",
+               "사용 후 씻어내는 제품에만 적용된다",
+               "제조번호만 표시하면 생략할 수 있다",
+               "25종 모두 사용이 금지된 성분이다"],
+     "explain": "알레르기 유발성분 25종은 기준 농도 초과 시 <b>'향료'가 아니라 해당 성분명</b>을 직접 기재해야 해요. 사용금지가 아니라 표시 의무예요."},
+]
+
+# ── 피부·모발 구조 (순서/분류 — 표준 이론) ──
+SKIN_LAYERS = ["각질층", "투명층", "과립층", "유극층", "기저층"]  # 표피, 바깥→안
+THEORY_MCQ += [
+    {"sub": "피부구조",
+     "q": "표피를 <b>바깥쪽에서 안쪽 순서</b>로 바르게 나열한 것은?",
+     "correct": "각질층 - 투명층 - 과립층 - 유극층 - 기저층",
+     "wrong": ["기저층 - 유극층 - 과립층 - 투명층 - 각질층",
+               "각질층 - 과립층 - 투명층 - 기저층 - 유극층",
+               "각질층 - 유극층 - 과립층 - 투명층 - 기저층",
+               "투명층 - 각질층 - 과립층 - 유극층 - 기저층"],
+     "explain": "표피는 바깥부터 <b>각질층 → 투명층 → 과립층 → 유극층 → 기저층</b> 순이에요. 투명층은 손바닥·발바닥에만 있어요."},
+    {"sub": "피부구조",
+     "q": "표피 중 <b>손바닥과 발바닥에만</b> 존재하는 층은?",
+     "correct": "투명층", "wrong": ["각질층", "과립층", "유극층", "기저층"],
+     "explain": "<b>투명층</b>은 손바닥·발바닥처럼 두꺼운 피부에만 있어요. 엘라이딘이 있어 투명하게 보여요."},
+    {"sub": "피부구조",
+     "q": "표피에서 <b>새로운 세포가 생성되는(세포 분열)</b> 층은?",
+     "correct": "기저층", "wrong": ["각질층", "과립층", "투명층", "유극층"],
+     "explain": "<b>기저층</b>에서 세포가 분열해 위로 밀려 올라가요. 멜라닌 세포도 기저층에 있어요."},
+    {"sub": "피부구조",
+     "q": "피부 구조를 바깥에서 안쪽 순서로 바르게 나열한 것은?",
+     "correct": "표피 - 진피 - 피하지방",
+     "wrong": ["진피 - 표피 - 피하지방", "표피 - 피하지방 - 진피",
+               "피하지방 - 진피 - 표피", "진피 - 피하지방 - 표피"],
+     "explain": "피부는 바깥부터 <b>표피 → 진피 → 피하지방</b> 순이에요."},
+    {"sub": "모발구조",
+     "q": "모발(모간)의 구조를 <b>바깥에서 안쪽 순서</b>로 바르게 나열한 것은?",
+     "correct": "모표피 - 모피질 - 모수질",
+     "wrong": ["모수질 - 모피질 - 모표피", "모피질 - 모표피 - 모수질",
+               "모표피 - 모수질 - 모피질", "모피질 - 모수질 - 모표피"],
+     "explain": "모발은 바깥부터 <b>모표피(큐티클) → 모피질(코르텍스) → 모수질(메둘라)</b> 순이에요. 모피질이 가장 두껍고 멜라닌·케라틴이 있어요."},
+    {"sub": "모발구조",
+     "q": "모발에서 <b>멜라닌 색소가 있어 모발 색을 결정</b>하고 가장 두꺼운 부분은?",
+     "correct": "모피질", "wrong": ["모표피", "모수질", "모근", "모유두"],
+     "explain": "<b>모피질(코르텍스)</b>이 모발의 대부분을 차지하며 멜라닌 색소와 케라틴이 있어 색과 강도를 결정해요."},
+]
+
+# ── 원료 분류 ──
+THEORY_MCQ += [
+    {"sub": "화장품원료",
+     "q": "다음 중 <b>계면활성제의 종류</b>가 아닌 것은?",
+     "correct": "산화형 계면활성제",
+     "wrong": ["음이온 계면활성제", "양이온 계면활성제", "비이온 계면활성제", "양쪽성 계면활성제"],
+     "explain": "계면활성제는 음이온·양이온·비이온·양쪽성 4가지예요. '산화형'은 없는 분류예요."},
+    {"sub": "화장품원료",
+     "q": "<b>세정력이 우수해 샴푸·클렌저</b> 등에 주로 쓰이는 계면활성제는?",
+     "correct": "음이온 계면활성제",
+     "wrong": ["양이온 계면활성제", "비이온 계면활성제", "양쪽성 계면활성제", "실리콘 계면활성제"],
+     "explain": "<b>음이온</b> 계면활성제는 세정·기포력이 우수해 샴푸·바디워시에 쓰여요. 양이온은 살균·유연(린스), 비이온은 순해서 기초화장품에 써요."},
+    {"sub": "화장품원료",
+     "q": "<b>살균·소독·정전기 방지</b> 효과로 헤어린스·트리트먼트에 쓰이는 계면활성제는?",
+     "correct": "양이온 계면활성제",
+     "wrong": ["음이온 계면활성제", "비이온 계면활성제", "양쪽성 계면활성제", "천연 계면활성제"],
+     "explain": "<b>양이온</b> 계면활성제는 살균·유연·대전방지 효과가 있어 린스·섬유유연제에 쓰여요."},
+    {"sub": "화장품원료",
+     "q": "다음 중 <b>보습제(습윤제)</b>로 쓰이는 수성원료가 아닌 것은?",
+     "correct": "스쿠알란",
+     "wrong": ["글리세린", "히알루론산", "프로필렌글라이콜", "부틸렌글라이콜"],
+     "explain": "<b>스쿠알란</b>은 유성원료(에몰리언트)예요. 글리세린·히알루론산·글라이콜류는 수성 보습제입니다."},
+]
+
+# ── 조제관리사 결격사유·합격기준·정의 (화장품법) ──
+THEORY_MCQ += [
+    {"sub": "법규",
+     "q": "맞춤형화장품 조제관리사 시험 <b>합격 기준</b>으로 옳은 것은?",
+     "correct": "전 과목 총점의 60% 이상 + 각 과목 만점의 40% 이상",
+     "wrong": ["전 과목 총점의 60% 이상만 득점",
+               "각 과목 만점의 60% 이상",
+               "전 과목 총점의 70% 이상 + 각 과목 50% 이상",
+               "4과목 모두 만점의 60% 이상"],
+     "explain": "총점 1000점의 <b>60%(600점) 이상</b>이면서 <b>각 과목 40% 이상</b>을 받아야 합격이에요. 한 과목이라도 40% 미만이면 과락이에요."},
+    {"sub": "법규",
+     "q": "다음 중 맞춤형화장품 조제관리사의 <b>결격사유가 아닌</b> 것은?",
+     "correct": "화장품 관련 실무 경력이 없는 사람",
+     "wrong": ["정신질환자(전문의가 적합하다고 인정한 자 제외)",
+               "마약류의 중독자",
+               "피성년후견인",
+               "자격이 취소된 날부터 3년이 지나지 않은 자"],
+     "explain": "실무 경력은 응시 요건이 아니에요(누구나 응시 가능). 결격사유는 정신질환자, 마약류 중독자, 피성년후견인, 관련 법 위반 금고형, 자격취소 3년 미경과자예요."},
+    {"sub": "법규",
+     "q": "<b>맞춤형화장품</b>의 정의로 옳은 것은?",
+     "correct": "제조·수입된 화장품 내용물에 다른 내용물이나 원료를 추가·혼합하거나, 내용물을 소분한 화장품",
+     "wrong": ["소비자가 직접 집에서 만든 화장품",
+               "천연 원료만으로 만든 화장품",
+               "기능성 원료를 100% 함유한 화장품",
+               "판매 전 임상시험을 거친 화장품"],
+     "explain": "맞춤형화장품은 기존 내용물에 다른 내용물·원료를 <b>혼합</b>하거나 <b>소분(小分)</b>한 화장품이에요."},
+    {"sub": "법규",
+     "q": "맞춤형화장품판매업 <b>영업 신고</b>와 관련하여 옳은 것은?",
+     "correct": "맞춤형화장품 조제관리사를 두어야 한다",
+     "wrong": ["약사만 판매할 수 있다",
+               "별도의 자격 없이 누구나 판매할 수 있다",
+               "제조업 등록만 하면 된다",
+               "책임판매업자는 겸할 수 없다"],
+     "explain": "맞춤형화장품판매업자는 매장마다 <b>맞춤형화장품 조제관리사</b>를 두어야 해요. 책임판매업과 병행도 가능해요."},
+]
+
+# ── 위해평가·유해사례 (화장품법/안전관리) ──
+THEORY_MCQ += [
+    {"sub": "위해평가",
+     "q": "위해평가의 <b>4단계</b> 순서로 옳은 것은?",
+     "correct": "위험성 확인 - 위험성 결정 - 노출평가 - 위해도 결정",
+     "wrong": ["노출평가 - 위험성 확인 - 위험성 결정 - 위해도 결정",
+               "위험성 확인 - 노출평가 - 위험성 결정 - 위해도 결정",
+               "위해도 결정 - 위험성 확인 - 노출평가 - 위험성 결정",
+               "위험성 결정 - 위험성 확인 - 위해도 결정 - 노출평가"],
+     "explain": "위해평가는 <b>위험성 확인 → 위험성 결정 → 노출평가 → 위해도 결정</b> 4단계예요."},
+    {"sub": "위해평가",
+     "q": "화장품 사용 중 발생한 <b>바람직하지 않은 징후·증상·질병</b>을 뜻하는 용어는?",
+     "correct": "유해사례", "wrong": ["위해요소", "부작용 확정", "안전역", "실마리정보"],
+     "explain": "<b>유해사례(AE)</b>는 화장품 사용 중 발생한 바람직하지 않은 징후로, 반드시 인과관계가 있어야 하는 건 아니에요."},
+]
+
+# ── 비의도적 유래물질 검출 허용 한도 (유통화장품 안전관리기준) ──
+#   교재 이미지 판독. 단위는 특별한 언급 없으면 μg/g.
+THEORY_MCQ += [
+    {"sub": "비의도유래물질",
+     "q": "<b>납</b>의 검출 허용 한도로 옳은 것은? (점토 원료 분말제품 / 그 밖의 제품)",
+     "correct": "50μg/g 이하 / 20μg/g 이하",
+     "wrong": ["20μg/g 이하 / 50μg/g 이하", "35μg/g 이하 / 10μg/g 이하",
+               "10μg/g 이하 / 5μg/g 이하", "100μg/g 이하 / 20μg/g 이하"],
+     "explain": "<b>납</b>은 점토를 원료로 한 분말제품 50μg/g 이하, 그 밖의 제품 20μg/g 이하예요."},
+    {"sub": "비의도유래물질",
+     "q": "<b>니켈</b>의 검출 허용 한도로 옳은 것은? (눈 화장용 / 색조 화장용 / 그 밖)",
+     "correct": "35 / 30 / 10 μg/g 이하",
+     "wrong": ["30 / 35 / 10 μg/g 이하", "10 / 30 / 35 μg/g 이하",
+               "35 / 10 / 30 μg/g 이하", "50 / 30 / 20 μg/g 이하"],
+     "explain": "<b>니켈</b>은 눈 화장용 35, 색조 화장용 30, 그 밖의 제품 10μg/g 이하예요. 눈>색조>그밖 순으로 기억."},
+    {"sub": "비의도유래물질",
+     "q": "<b>비소</b>의 검출 허용 한도는?",
+     "correct": "10μg/g 이하", "wrong": ["1μg/g 이하", "5μg/g 이하", "20μg/g 이하", "100μg/g 이하"],
+     "explain": "<b>비소</b>는 10μg/g 이하예요. (안티몬·디옥산과 헷갈리지 말 것)"},
+    {"sub": "비의도유래물질",
+     "q": "<b>수은</b>의 검출 허용 한도는?",
+     "correct": "1μg/g 이하", "wrong": ["10μg/g 이하", "5μg/g 이하", "0.1μg/g 이하", "20μg/g 이하"],
+     "explain": "<b>수은</b>은 1μg/g 이하로, 비의도 유래물질 중 가장 낮아요."},
+    {"sub": "비의도유래물질",
+     "q": "<b>안티몬</b>의 검출 허용 한도는?",
+     "correct": "10μg/g 이하", "wrong": ["1μg/g 이하", "5μg/g 이하", "20μg/g 이하", "50μg/g 이하"],
+     "explain": "<b>안티몬</b>은 10μg/g 이하예요. (비소와 같은 값)"},
+    {"sub": "비의도유래물질",
+     "q": "<b>카드뮴</b>의 검출 허용 한도는?",
+     "correct": "5μg/g 이하", "wrong": ["1μg/g 이하", "10μg/g 이하", "20μg/g 이하", "50μg/g 이하"],
+     "explain": "<b>카드뮴</b>은 5μg/g 이하예요."},
+    {"sub": "비의도유래물질",
+     "q": "<b>디옥산</b>의 검출 허용 한도는?",
+     "correct": "100μg/g 이하", "wrong": ["10μg/g 이하", "20μg/g 이하", "50μg/g 이하", "2000μg/g 이하"],
+     "explain": "<b>디옥산</b>은 100μg/g 이하예요."},
+    {"sub": "비의도유래물질",
+     "q": "<b>메탄올</b>의 검출 허용 한도로 옳은 것은? (일반 / 물휴지)",
+     "correct": "0.2(v/v)% 이하 / 0.002%(v/v) 이하",
+     "wrong": ["0.002%(v/v) 이하 / 0.2(v/v)% 이하", "0.1% 이하 / 0.001% 이하",
+               "2000μg/g 이하 / 20μg/g 이하", "0.2μg/g 이하 / 0.002μg/g 이하"],
+     "explain": "<b>메탄올</b>은 0.2(v/v)% 이하, 물휴지는 0.002%(v/v) 이하예요. 단위가 %(v/v)라는 점이 함정."},
+    {"sub": "비의도유래물질",
+     "q": "<b>포름알데하이드</b>의 검출 허용 한도로 옳은 것은? (일반 / 물휴지)",
+     "correct": "2000μg/g 이하 / 20μg/g 이하",
+     "wrong": ["20μg/g 이하 / 2000μg/g 이하", "100μg/g 이하 / 20μg/g 이하",
+               "0.2% 이하 / 0.002% 이하", "1000μg/g 이하 / 10μg/g 이하"],
+     "explain": "<b>포름알데하이드</b>는 2000μg/g 이하, 물휴지는 20μg/g 이하예요. 물휴지 기준이 훨씬 엄격."},
+    {"sub": "비의도유래물질",
+     "q": "<b>프탈레이트류</b>의 검출 허용 한도와 대상 3종으로 옳은 것은?",
+     "correct": "총합 100μg/g 이하 (디부틸프탈레이트·부틸벤질프탈레이트·디에칠헥실프탈레이트)",
+     "wrong": ["총합 20μg/g 이하 (3종)", "각 100μg/g 이하 (3종)",
+               "총합 2000μg/g 이하 (3종)", "총합 50μg/g 이하 (5종)"],
+     "explain": "<b>프탈레이트류</b>는 디부틸·부틸벤질·디에칠헥실프탈레이트 <b>3종의 총합으로 100μg/g 이하</b>예요."},
+    {"sub": "비의도유래물질",
+     "q": "다음 비의도 유래물질 중 <b>검출 허용 한도가 가장 낮은</b> 것은?",
+     "correct": "수은 (1μg/g)",
+     "wrong": ["비소 (10μg/g)", "카드뮴 (5μg/g)", "디옥산 (100μg/g)", "납 (20μg/g)"],
+     "explain": "<b>수은 1μg/g</b>이 가장 낮아요. 수은(1) < 카드뮴(5) < 비소·안티몬(10) < 납(20) < 디옥산(100) 순."},
+    {"sub": "비의도유래물질",
+     "q": "비의도적 유래물질의 검출 허용 한도가 적용되는 경우로 옳은 것은?",
+     "correct": "인위적으로 첨가하지 않았으나 비의도적으로 유래되고 기술적으로 완전 제거가 불가능한 경우",
+     "wrong": ["원료로 의도적으로 첨가한 경우",
+               "소비자가 요청한 경우",
+               "제조사가 품질 향상을 위해 넣은 경우",
+               "모든 화장품에 무조건 적용"],
+     "explain": "인위적으로 넣지 않았지만 포장재 등에서 <b>비의도적으로 유래</b>되고 <b>기술적으로 완전 제거가 불가능</b>할 때만 이 허용 한도가 적용돼요."},
+]
+
+
+def build_theory():
+    import random, hashlib
+    qs = []
+
+    # (A) 알레르기 25종 — "이 성분이 알레르기 유발성분에 해당하는가?" 판별형
+    #   정답: 25종 중 하나 / 오답: 비-알레르기 성분 4개
+    for name in ALLERGENS_25:
+        wrong = random.sample(NON_ALLERGENS, 4)
+        qs.append({
+            "cat": "알레르기", "type": "알레르기유발성분",
+            "q": f"다음 중 <b>착향제 알레르기 유발성분 25종</b>에 해당하는 것은?",
+            "opts": [name] + wrong,
+            "answer": 0,
+            "explain": f"<b>{name}</b>은(는) 식약처 고시 알레르기 유발성분 25종 중 하나예요. 나머지는 해당하지 않아요.",
+            "compare": [["표시 기준(씻어내는)", "0.01% 초과"],
+                        ["표시 기준(안 씻어내는)", "0.001% 초과"],
+                        ["총 종수", "25종"]],
+        })
+    # (A-2) 역방향: "다음 중 알레르기 유발성분이 아닌 것은?" (정답=비알레르기 1 + 알레르기 4)
+    for _i in range(8):
+        non = random.choice(NON_ALLERGENS)
+        allos = random.sample(ALLERGENS_25, 4)
+        qs.append({
+            "cat": "알레르기", "type": "알레르기유발성분",
+            "q": "다음 중 <b>착향제 알레르기 유발성분 25종에 해당하지 않는</b> 것은?",
+            "opts": [non] + allos,
+            "answer": 0,
+            "_seed": _i,
+            "explain": f"<b>{non}</b>은(는) 알레르기 유발성분 25종에 포함되지 않아요. 나머지 4개는 모두 25종에 해당해요.",
+            "compare": [["25종 예시", "리모넨·리날룰·제라니올·유제놀·쿠마린 등"]],
+        })
+
+    # (B) 개념·법규·구조 MCQ (THEORY_MCQ)
+    #   sub(세부유형)를 카테고리 그룹으로 매핑
+    SUB2CAT = {
+        "알레르기유발성분": "알레르기",
+        "피부구조": "피부·모발", "모발구조": "피부·모발",
+        "화장품원료": "원료",
+        "법규": "법규", "위해평가": "위해평가",
+        "비의도유래물질": "비의도물질",
+    }
+    for item in THEORY_MCQ:
+        opts = [item["correct"]] + item["wrong"]
+        qs.append({
+            "cat": SUB2CAT.get(item["sub"], "기타"), "type": item["sub"],
+            "q": item["q"],
+            "opts": opts[:5],   # 최대 5지선다
+            "answer": 0,
+            "explain": item["explain"],
+        })
+
+    # ID 부여
+    for q in qs:
+        seed = str(q.pop("_seed", ""))
+        key = q["q"] + "||" + q["opts"][q["answer"]] + "||" + q["type"] + "||" + seed
+        q["id"] = "th" + hashlib.md5(key.encode("utf-8")).hexdigest()[:8]
+    return qs
+
+
+THEORY_QUESTIONS = build_theory()
+
 # ─────────────────────────────────────────────────────────────
 # HTML 출력
 # ─────────────────────────────────────────────────────────────
@@ -927,7 +1229,7 @@ HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>사용한도 성분 퀴즈 | 맞춤형화장품 조제관리사</title>
+<title>맞춤형화장품 조제관리사 종합 퀴즈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
@@ -1200,18 +1502,55 @@ HTML = """<!DOCTYPE html>
 
   /* ── mode toggle ── */
   .mode-toggle{
-    display:flex;gap:6px;padding:5px;margin-bottom:16px;
+    display:flex;flex-wrap:wrap;gap:6px;padding:5px;margin-bottom:16px;
     background:var(--bg-tint);border-radius:14px;
   }
   .mode-btn{
-    flex:1;padding:10px;border:none;border-radius:10px;cursor:pointer;
-    font-family:var(--sans);font-weight:700;font-size:13.5px;
+    flex:1 1 30%;padding:10px 6px;border:none;border-radius:10px;cursor:pointer;
+    font-family:var(--sans);font-weight:700;font-size:13px;white-space:nowrap;
     background:transparent;color:var(--ink-soft);transition:all .16s;
   }
   .mode-btn.active{
     background:#fff;color:var(--coral-deep);
     box-shadow:0 4px 12px -6px rgba(242,107,133,.5);
   }
+
+  /* ── 단답형 입력 ── */
+  .sa-wrap{display:flex;gap:9px;margin-top:6px;flex-wrap:wrap;}
+  .sa-input{
+    flex:1;min-width:190px;padding:15px 17px;border-radius:16px;
+    border:2px solid var(--line);background:#fff;color:var(--ink);
+    font-family:var(--sans);font-size:16px;font-weight:600;outline:none;transition:border-color .15s;
+  }
+  .sa-input:focus{border-color:var(--coral);}
+  .sa-input.ok{border-color:var(--correct);background:var(--correct-bg);}
+  .sa-input.no{border-color:var(--wrong);background:var(--wrong-bg);}
+  .sa-btn{
+    padding:15px 22px;border:none;border-radius:16px;cursor:pointer;
+    background:var(--coral);color:#fff;font-family:var(--sans);font-weight:800;font-size:15px;
+    transition:background .15s;
+  }
+  .sa-btn:hover{background:var(--coral-deep);}
+  .sa-btn.ghost{background:var(--bg-tint);color:var(--ink-soft);}
+  .sa-ans{
+    margin-top:12px;padding:13px 16px;border-radius:14px;
+    background:var(--bg-tint);font-size:14.5px;font-weight:700;color:var(--ink);
+  }
+  .sa-ans small{display:block;font-weight:600;color:var(--ink-soft);font-size:12.5px;margin-top:4px;}
+
+  /* ── 교재 배지 ── */
+  .page-tag{
+    margin-left:auto;padding:4px 10px;border-radius:999px;
+    background:var(--bg-tint);color:var(--ink-soft);
+    font-size:11.5px;font-weight:800;white-space:nowrap;
+  }
+  .book-tag{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;}
+  .book-tag.bk{background:#E4F7F2;color:#268F79;}
+  .book-tag.vr{background:#EEF3FF;color:#5A79C8;}
+  .book-tag.law{background:#FFF4DC;color:#B98218;}
+  .book-tag.fix{background:#FFEBEF;color:#E05574;}
+  .book-tag.ing{background:#F3EEFC;color:#7B62BD;}
+  .sub-label{margin-top:2px;}
 
   /* ── OX buttons ── */
   .ox-options{display:flex;gap:12px;margin-top:4px;}
@@ -1285,17 +1624,22 @@ HTML = """<!DOCTYPE html>
 <div class="wrap">
   <header class="top">
     <div class="kicker"><span class="dot"></span>맞춤형화장품 조제관리사</div>
-    <h1><span class="accent">사용한도 성분</span> 암기 퀴즈</h1>
-    <div class="sub">화장품 안전기준 등에 관한 규정 별표2 · 보기 순서는 매번 랜덤이에요</div>
+    <h1><span class="accent">조제관리사</span> 종합 퀴즈</h1>
+    <div class="sub">별표2 사용한도 + 기본서 361쪽 전범위 · 총 2,147문항 · 보기 순서는 매번 랜덤이에요</div>
   </header>
 
   <div class="panel">
     <div class="mode-toggle" id="modeToggle">
-      <button class="mode-btn active" data-mode="mcq">📝 사지선다</button>
-      <button class="mode-btn" data-mode="ox">⭕ OX 퀴즈</button>
+      <button class="mode-btn active" data-mode="mcq">📝 사용한도</button>
+      <button class="mode-btn" data-mode="ox">⭕ OX</button>
+      <button class="mode-btn" data-mode="theory">📖 핵심이론</button>
+      <button class="mode-btn" data-mode="book">📗 교재 전범위</button>
+      <button class="mode-btn" data-mode="ing">🧪 성분 암기</button>
     </div>
     <div class="ctl-label">분류 선택</div>
     <div class="chips" id="chips"></div>
+    <div class="ctl-label sub-label" id="subLabel" style="display:none">세부 범위</div>
+    <div class="chips" id="subChips" style="display:none"></div>
     <div class="ctl-label">출제 문항 수</div>
     <div class="chips" id="lenChips"></div>
     <div class="quick-row" id="quickRow"></div>
@@ -1317,6 +1661,11 @@ HTML = """<!DOCTYPE html>
 <script>
 const QUESTIONS = __QUESTIONS__;
 const OX_QUESTIONS = __OX_QUESTIONS__;
+const THEORY_QUESTIONS = __THEORY_QUESTIONS__;
+const BOOK_QUESTIONS = __BOOK_QUESTIONS__;
+const ING_ORDER = ["원료 분류·특성","색소","사용할 수 없는 원료","사용제한 원료 한도",
+                   "기능성 고시성분","알레르기·주의사항 성분","안전관리기준 수치"];
+const SUBJ_ORDER = ["화장품법","제조·품질","유통안전","맞춤형"];
 
 const LENGTHS = [10, 20, 30, "전체"];
 const NEGATIVE_TYPES = ["부정형"];
@@ -1325,6 +1674,7 @@ const STORE_KEY = "cosmetic_quiz_v1";
 
 let quizMode = "mcq";           // mcq | ox  (ox는 기록 없이 가볍게)
 let currentFilter = "전체";
+let currentSub = "전체";
 let currentLen = 20;
 let order = [], idx = 0, score = 0, answered = false, missed = [], streak = 0, bestStreak = 0;
 let lastMode = "normal"; // normal | retry | wrongbank
@@ -1332,11 +1682,48 @@ let statsOpen = false;
 
 function modeCategories(){
   const bank = currentBank();
+  if(quizMode === "ing"){
+    return ["전체", ...ING_ORDER.filter(g => bank.some(q => q.ing === g))];
+  }
+  if(quizMode === "book"){
+    return ["전체", ...SUBJ_ORDER.filter(c => bank.some(q => q.cat === c)), "교재 원문제"];
+  }
   return ["전체", ...Array.from(new Set(bank.map(q => q.cat)))];
+}
+
+/* 1단 필터를 적용한 목록 */
+function filterLevel1(bank){
+  if(currentFilter === "전체") return bank;
+  if(quizMode === "ing")  return bank.filter(q => q.ing === currentFilter);
+  if(quizMode === "book"){
+    if(currentFilter === "교재 원문제") return bank.filter(q => q.origin !== "new");
+    return bank.filter(q => q.cat === currentFilter);
+  }
+  return bank.filter(q => q.cat === currentFilter);
+}
+
+/* 2단 필터 후보 — 교재 모드에서 과목을 고르면 그 과목의 챕터 */
+function subCategories(){
+  if(!isBookMode()) return null;
+  const l1 = filterLevel1(currentBank());
+  if(quizMode === "book" && currentFilter === "전체") return null;
+  const chaps = Array.from(new Set(l1.map(q => q.chap))).sort((a, b) => a.localeCompare(b, "ko"));
+  return chaps.length > 1 ? ["전체", ...chaps] : null;
+}
+
+/* 최종 출제 풀 */
+function filteredPool(){
+  let list = filterLevel1(currentBank());
+  const subs = subCategories();
+  if(subs && currentSub !== "전체" && subs.includes(currentSub)){
+    list = list.filter(q => q.chap === currentSub);
+  }
+  return list;
 }
 const catList = Array.from(new Set(QUESTIONS.map(q => q.cat)));
 const QMAP = {};
-QUESTIONS.forEach(q => { QMAP[q.id] = q; });
+[QUESTIONS, OX_QUESTIONS, THEORY_QUESTIONS, BOOK_QUESTIONS]
+  .forEach(bank => bank.forEach(q => { QMAP[q.id] = q; }));
 
 /* ── 저장소 ──────────────────────────────
    store = {
@@ -1389,14 +1776,21 @@ function shuffle(arr){
 }
 
 function shuffleOptions(q){
+  // 보기가 없는 유형(OX·단답)은 그대로 통과
+  if(!q.opts || !q.opts.length) return q;
   const correctText = q.opts[q.answer];
   const shuffled = shuffle(q.opts);
   return { ...q, opts: shuffled, answer: shuffled.indexOf(correctText) };
 }
 
 function currentBank(){
-  return quizMode === "ox" ? OX_QUESTIONS : QUESTIONS;
+  if(quizMode === "ox") return OX_QUESTIONS;
+  if(quizMode === "theory") return THEORY_QUESTIONS;
+  if(quizMode === "book") return BOOK_QUESTIONS;
+  if(quizMode === "ing") return BOOK_QUESTIONS.filter(q => q.ing);
+  return QUESTIONS;
 }
+function isBookMode(){ return quizMode === "book" || quizMode === "ing"; }
 
 function buildChips(){
   const bank = currentBank();
@@ -1405,14 +1799,40 @@ function buildChips(){
   if(!cats.includes(currentFilter)) currentFilter = "전체";
   const chipsEl = document.getElementById('chips');
   chipsEl.innerHTML = "";
+  const saved = currentFilter;
   cats.forEach(cat => {
-    const n = cat === "전체" ? bank.length : bank.filter(q => q.cat === cat).length;
+    currentFilter = cat;
+    const n = filterLevel1(bank).length;
+    currentFilter = saved;
     const b = document.createElement('button');
     b.className = 'chip' + (cat === currentFilter ? ' active' : '');
     b.innerHTML = cat + ' <span class="n">' + n + '</span>';
-    b.onclick = () => { currentFilter = cat; startQuiz(); };
+    b.onclick = () => { currentFilter = cat; currentSub = "전체"; startQuiz(); };
     chipsEl.appendChild(b);
   });
+
+  // ── 2단 필터 (교재·성분 모드에서 과목/갈래를 고르면 챕터가 열림) ──
+  const subs = subCategories();
+  const subEl = document.getElementById('subChips');
+  const subLb = document.getElementById('subLabel');
+  if(subs){
+    if(!subs.includes(currentSub)) currentSub = "전체";
+    subEl.innerHTML = "";
+    const l1 = filterLevel1(bank);
+    subs.forEach(sc => {
+      const n = sc === "전체" ? l1.length : l1.filter(q => q.chap === sc).length;
+      const b = document.createElement('button');
+      b.className = 'chip small' + (sc === currentSub ? ' active' : '');
+      const label = sc.replace(/^CHAPTER\s*0?(\d+)(-\d+)?\s*/, (m, n, sub) => n + (sub || "") + ". ");
+      b.innerHTML = label + ' <span class="n">' + n + '</span>';
+      b.onclick = () => { currentSub = sc; startQuiz(); };
+      subEl.appendChild(b);
+    });
+    subEl.style.display = ""; subLb.style.display = "";
+  } else {
+    currentSub = "전체";
+    subEl.style.display = "none"; subLb.style.display = "none";
+  }
 
   const lenEl = document.getElementById('lenChips');
   lenEl.innerHTML = "";
@@ -1529,9 +1949,7 @@ function startQuiz(customPool, mode){
   const bank = currentBank();
   // 현재 필터가 이 모드에 없으면 전체로 (OX엔 소독제·법령 없음)
   if(!customPool && !modeCategories().includes(currentFilter)) currentFilter = "전체";
-  const base = customPool
-    ? customPool
-    : (currentFilter === "전체" ? bank : bank.filter(q => q.cat === currentFilter));
+  const base = customPool ? customPool : filteredPool();
 
   let picked = shuffle(base);
   if(!customPool && currentLen !== "전체"){
@@ -1539,11 +1957,42 @@ function startQuiz(customPool, mode){
   }
   // OX는 보기가 없으니 셔플 대상 아님
   order = quizMode === "ox" ? picked.slice() : picked.map(shuffleOptions);
+  // 교재 뱅크는 유형이 섞여 있어 shuffleOptions가 알아서 통과시킨다
 
   idx = 0; score = 0; missed = []; streak = 0; bestStreak = 0;
   document.getElementById('progressFill').style.width = "0%";
   buildChips();
   renderQuestion();
+}
+
+/* 교재 문항의 태그 줄: 과목 · 유형 · 출처 배지 · 성분 갈래 · 교재 쪽수 */
+function tagRow(q){
+  const modeTag = lastMode === "wrongbank" ? '<span class="type-tag neg">누적오답</span>'
+                : lastMode === "retry" ? '<span class="type-tag neg">오답복습</span>' : "";
+  let extra = "";
+  if(q.origin === "book")    extra += '<span class="book-tag bk">교재 원문제</span>';
+  if(q.origin === "variant") extra += '<span class="book-tag vr">교재 변형</span>';
+  if(q.flag === "law")       extra += '<span class="book-tag law">⚠ 법령 기준</span>';
+  if(q.flag === "bookfix")   extra += '<span class="book-tag fix">교재 오기 정정</span>';
+  if(q.ing && quizMode !== "ing") extra += '<span class="book-tag ing">🧪 ' + q.ing + '</span>';
+  const page = q.page ? '<span class="page-tag">교재 ' + q.page + '쪽</span>' : "";
+  const neg = NEGATIVE_TYPES.includes(q.type) ? " neg" : "";
+  return '<div class="tag-row"><span class="cat-tag">' + q.cat + '</span>'
+       + '<span class="type-tag' + neg + '">' + q.type + '</span>'
+       + modeTag + extra + page + '</div>';
+}
+
+/* 단답형 정답 판정 — 표기 변형·부분일치 허용 */
+function normAns(s){
+  return String(s).replace(/[\s·,\.\-_()~%'"]/g, "").toLowerCase();
+}
+function matchShort(input, list){
+  const u = normAns(input);
+  if(!u) return false;
+  return list.some(a => {
+    const t = normAns(a);
+    return t === u || (t.length >= 3 && (t.includes(u) || u.includes(t)));
+  });
 }
 
 function renderQuestion(){
@@ -1556,13 +2005,35 @@ function renderQuestion(){
   document.getElementById('progressLabel').textContent = (idx + 1) + " / " + order.length;
   document.getElementById('streak').textContent = streak >= 3 ? "🔥 " + streak + " 연속" : "";
 
-  // ── OX 모드 ──
-  if(quizMode === "ox"){
+  const kind = q.kind || (quizMode === "ox" ? "ox" : "mcq");
+
+  // ── 단답형 ──
+  if(kind === "short"){
     card.innerHTML = `
-      <div class="tag-row">
-        <span class="cat-tag">${q.cat}</span>
-        <span class="type-tag">OX</span>
+      ${tagRow(q)}
+      <p class="q-text"><span class="num">Q${idx + 1}.</span> ${q.q}</p>
+      <div class="sa-wrap">
+        <input class="sa-input" id="saInput" placeholder="정답을 입력하세요" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="sa-btn" id="saGo">확인</button>
+        <button class="sa-btn ghost" id="saSkip">모르겠어요</button>
       </div>
+      <div class="explain" id="explainBox"></div>
+      <button class="next-btn" id="nextBtn">${idx + 1 === order.length ? "결과 보기 →" : "다음 문제 →"}</button>
+    `;
+    const inp = document.getElementById('saInput');
+    const go  = () => selectShort(inp.value, q);
+    document.getElementById('saGo').addEventListener('click', go);
+    document.getElementById('saSkip').addEventListener('click', () => selectShort("", q));
+    inp.addEventListener('keydown', e => { if(e.key === "Enter") go(); });
+    document.getElementById('nextBtn').addEventListener('click', () => { idx++; renderQuestion(); });
+    inp.focus({ preventScroll: true });
+    return;
+  }
+
+  // ── OX ──
+  if(kind === "ox"){
+    card.innerHTML = `
+      ${tagRow(q)}
       <p class="q-text"><span class="num">Q${idx + 1}.</span> ${q.q}</p>
       <div class="ox-options">
         <button class="ox-btn o" data-ox="O"><span class="ox-mark">O</span><span class="ox-label">맞다</span></button>
@@ -1577,15 +2048,8 @@ function renderQuestion(){
   }
 
   const L = ["A", "B", "C", "D", "E"];
-  const negClass = NEGATIVE_TYPES.includes(q.type) ? " neg" : "";
-  const modeTag = lastMode === "wrongbank" ? '<span class="type-tag neg">누적오답</span>'
-                : lastMode === "retry" ? '<span class="type-tag neg">오답복습</span>' : "";
   card.innerHTML = `
-    <div class="tag-row">
-      <span class="cat-tag">${q.cat}</span>
-      <span class="type-tag${negClass}">${q.type}</span>
-      ${modeTag}
-    </div>
+    ${tagRow(q)}
     <p class="q-text"><span class="num">Q${idx + 1}.</span> ${q.q}</p>
     <div class="options">
       ${q.opts.map((o, i) => `<button class="opt" data-i="${i}"><span class="letter">${L[i]}</span><span class="txt">${o}</span></button>`).join("")}
@@ -1638,13 +2102,49 @@ function selectOption(btn, q){
   nb.focus({ preventScroll: true });
 }
 
+function selectShort(value, q){
+  if(answered) return;
+  answered = true;
+  const isRight = matchShort(value, q.ans || []);
+
+  recordAnswer(q, isRight);
+
+  if(isRight){
+    score++; streak++; if(streak > bestStreak) bestStreak = streak;
+  } else {
+    streak = 0;
+    missed.push({ ...q, chosenText: value ? value : "(비워둠)" });
+  }
+  document.getElementById('streak').textContent = streak >= 3 ? "🔥 " + streak + " 연속" : "";
+
+  const inp = document.getElementById('saInput');
+  inp.value = value;
+  inp.disabled = true;
+  inp.classList.add(isRight ? 'ok' : 'no');
+  document.getElementById('saGo').disabled = true;
+  document.getElementById('saSkip').disabled = true;
+
+  const alts = (q.ans || []);
+  const box = document.getElementById('explainBox');
+  box.innerHTML = `
+    <div class="stamp-row"><span class="stamp ${isRight ? 'ok' : 'no'}">${isRight ? '맞았어요!' : '아쉬워요'}</span></div>
+    <div class="sa-ans">정답 · ${alts[0] || ""}
+      ${alts.length > 1 ? '<small>이렇게 써도 정답 — ' + alts.slice(1).join(" / ") + '</small>' : ""}</div>
+    <div style="margin-top:10px">${q.explain}</div>`;
+  box.classList.add('show');
+  const nb = document.getElementById('nextBtn');
+  nb.classList.add('show');
+  nb.focus({ preventScroll: true });
+}
+
 function selectOX(btn, q){
   if(answered) return;
   answered = true;
   const chosen = btn.dataset.ox;           // "O" | "X"
   const isRight = chosen === q.answer_ox;
 
-  // OX는 기록 없이 가볍게 → recordAnswer 호출 안 함
+  // 기존 OX 뱅크는 기록 없이 가볍게. 교재 뱅크 OX는 누적에 반영.
+  if(q.kind) recordAnswer(q, isRight);
   if(isRight){
     score++; streak++; if(streak > bestStreak) bestStreak = streak;
   } else {
@@ -1701,7 +2201,10 @@ function renderResult(){
     : `틀린 ${missed.length}문제만 다시`;
 
   // 누적 오답(이번 판 제외)이 따로 있는지 — 사지선다 모드에서만
-  const bankWrong = (quizMode === "mcq") ? wrongBankIds() : [];
+  const bankWrong = (quizMode === "ox") ? [] : wrongBankIds().filter(id => {
+    const bank = currentBank();
+    return bank.some(x => x.id === id);
+  });
   const missedIds = new Set(missed.map(m => m.id));
   const extraWrong = bankWrong.filter(id => !missedIds.has(id));
   const showCombo = missed.length && extraWrong.length > 0;
@@ -1710,11 +2213,14 @@ function renderResult(){
     <div class="missed-list">
       <div class="missed-head">📝 이번 판 오답 · ${missed.length}문제</div>
       ${missed.map(m => {
-        const right = (quizMode === "ox") ? (m.answer_ox === "O" ? "O (맞다)" : "X (아니다)")
-                                          : m.opts[m.answer];
-        const mine = (quizMode === "ox") ? (m.chosenText === "O" ? "O" : "X") : m.chosenText;
+        const k = m.kind || (quizMode === "ox" ? "ox" : "mcq");
+        const right = k === "ox"    ? (m.answer_ox === "O" ? "O (맞다)" : "X (아니다)")
+                    : k === "short" ? (m.ans || []).join(" / ")
+                    : m.opts[m.answer];
+        const mine = k === "ox" ? (m.chosenText === "O" ? "O" : "X") : m.chosenText;
+        const pg = m.page ? ` <span class="page-tag">교재 ${m.page}쪽</span>` : "";
         return `<div class="missed-item">
-          <div class="mq">${m.q.replace(/<[^>]*>/g, "")}</div>
+          <div class="mq">${m.q.replace(/<[^>]*>/g, "")}${pg}</div>
           <div><span class="mx">${mine}</span> → <span class="ma">${right}</span></div>
         </div>`;
       }).join("")}
@@ -1788,6 +2294,8 @@ startQuiz();
 def main():
     html = HTML.replace("__QUESTIONS__", json.dumps(QUESTIONS, ensure_ascii=False, indent=1))
     html = html.replace("__OX_QUESTIONS__", json.dumps(OX_QUESTIONS, ensure_ascii=False, indent=1))
+    html = html.replace("__THEORY_QUESTIONS__", json.dumps(THEORY_QUESTIONS, ensure_ascii=False, indent=1))
+    html = html.replace("__BOOK_QUESTIONS__", json.dumps(BOOK_QUESTIONS, ensure_ascii=False, separators=(",", ":")))
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -1797,7 +2305,13 @@ def main():
         counts[q["cat"]] += 1
         types[q["type"]] += 1
 
-    print(f"index.html 생성 완료 — 사지선다 {len(QUESTIONS)}문항 / OX {len(OX_QUESTIONS)}문항")
+    bk = defaultdict(int)
+    for q in BOOK_QUESTIONS:
+        bk[q.get("kind", "mcq")] += 1
+    total = len(QUESTIONS) + len(OX_QUESTIONS) + len(THEORY_QUESTIONS) + len(BOOK_QUESTIONS)
+    print(f"index.html 생성 완료 — 총 {total}문항")
+    print(f"  사용한도 {len(QUESTIONS)} / OX {len(OX_QUESTIONS)} / 핵심이론 {len(THEORY_QUESTIONS)} / 교재 {len(BOOK_QUESTIONS)}")
+    print(f"  교재 뱅크 유형: {dict(bk)}")
     print("  분류별:", dict(counts))
     print("  유형별:", dict(types))
 
